@@ -44,25 +44,34 @@ def conectar() -> bool:
 
     inicializado = False
 
+    # Intentos de inicialización en orden de prioridad
+    intentos = []
+
     if mt5_path:
-        # Usar la ruta especificada en .env
-        inicializado = mt5.initialize(path=mt5_path)
-        if not inicializado:
-            print(f"❌ No se pudo inicializar con ruta: {mt5_path}")
-            print(f"   Error: {mt5.last_error()}")
-    else:
-        # Intentar sin ruta primero (busca MT5 automáticamente)
-        inicializado = mt5.initialize()
-        if not inicializado:
-            print(f"⚠️  Búsqueda automática fallida ({mt5.last_error()}). Probando rutas conocidas...")
-            for ruta in rutas_defecto:
-                if os.path.exists(ruta):
-                    print(f"   Intentando: {ruta}")
-                    inicializado = mt5.initialize(path=ruta)
-                    if inicializado:
-                        print(f"   ✅ Encontrado en: {ruta}")
-                        print(f"   💡 Agrega MT5_PATH={ruta} al .env para conexión directa")
-                        break
+        # Con ruta + credenciales (más confiable en PCs nuevas)
+        intentos.append({"path": mt5_path, "login": login, "password": password, "server": server})
+        # Con ruta sin credenciales
+        intentos.append({"path": mt5_path})
+
+    # Sin ruta, con credenciales (MT5 ya abierto)
+    intentos.append({"login": login, "password": password, "server": server})
+    # Sin nada (detección automática)
+    intentos.append({})
+
+    # Agregar rutas conocidas como fallback
+    for ruta in rutas_defecto:
+        if os.path.exists(ruta) and ruta != mt5_path:
+            intentos.append({"path": ruta, "login": login, "password": password, "server": server})
+            intentos.append({"path": ruta})
+
+    for kwargs in intentos:
+        desc = kwargs.get("path", "automático")
+        inicializado = mt5.initialize(**kwargs)
+        if inicializado:
+            print(f"   ✅ Inicializado correctamente ({desc})")
+            break
+        else:
+            print(f"   ⚠️  Intento fallido ({desc}): {mt5.last_error()}")
 
     if not inicializado:
         print(f"❌ Error al inicializar MT5: {mt5.last_error()}")
