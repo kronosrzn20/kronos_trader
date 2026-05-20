@@ -28,11 +28,46 @@ def conectar() -> bool:
     login    = int(os.getenv("MT5_LOGIN", 0))
     password = os.getenv("MT5_PASSWORD", "")
     server   = os.getenv("MT5_SERVER", "")
+    mt5_path = os.getenv("MT5_PATH", "")
 
     print("🔌 Iniciando conexión con MetaTrader 5...")
 
-    if not mt5.initialize():
+    # Rutas por defecto a intentar si no se especifica MT5_PATH
+    rutas_defecto = [
+        r"C:\Program Files\MetaTrader 5\terminal64.exe",
+        r"C:\Program Files (x86)\MetaTrader 5\terminal64.exe",
+        r"C:\Program Files\XM Global MT5\terminal64.exe",
+        r"C:\Program Files\XM MT5\terminal64.exe",
+        r"C:\Program Files\Pepperstone MetaTrader 5\terminal64.exe",
+        r"C:\Program Files\ICMarkets MT5\terminal64.exe",
+    ]
+
+    inicializado = False
+
+    if mt5_path:
+        # Usar la ruta especificada en .env
+        inicializado = mt5.initialize(path=mt5_path)
+        if not inicializado:
+            print(f"❌ No se pudo inicializar con ruta: {mt5_path}")
+            print(f"   Error: {mt5.last_error()}")
+    else:
+        # Intentar sin ruta primero (busca MT5 automáticamente)
+        inicializado = mt5.initialize()
+        if not inicializado:
+            print(f"⚠️  Búsqueda automática fallida ({mt5.last_error()}). Probando rutas conocidas...")
+            for ruta in rutas_defecto:
+                if os.path.exists(ruta):
+                    print(f"   Intentando: {ruta}")
+                    inicializado = mt5.initialize(path=ruta)
+                    if inicializado:
+                        print(f"   ✅ Encontrado en: {ruta}")
+                        print(f"   💡 Agrega MT5_PATH={ruta} al .env para conexión directa")
+                        break
+
+    if not inicializado:
         print(f"❌ Error al inicializar MT5: {mt5.last_error()}")
+        print("   Verifica que MetaTrader 5 esté abierto y con 'Algo Trading' activo.")
+        print("   Si el problema persiste, agrega MT5_PATH=<ruta_completa> al archivo .env")
         return False
 
     autorizado = mt5.login(login=login, password=password, server=server)
