@@ -5,7 +5,6 @@ import Topbar     from './components/Topbar'
 import StatusBar  from './components/StatusBar'
 import Dashboard  from './pages/Dashboard'
 import Signals    from './pages/Signals'
-import News       from './pages/News'
 import History    from './pages/History'
 import Config     from './pages/Config'
 
@@ -26,7 +25,6 @@ export default function App() {
               <Routes>
                 <Route path="/"         element={<Dashboard />} />
                 <Route path="/signals"  element={<Signals />}   />
-                <Route path="/news"     element={<News />}      />
                 <Route path="/history"  element={<History />}   />
                 <Route path="/config"   element={<Config />}    />
               </Routes>

@@ -3,38 +3,11 @@ import { Wifi, WifiOff } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { API, PARES } from '../utils/constants'
 
-function Toggle({ label, value, onChange }) {
-  return (
-    <label className="flex items-center gap-2 cursor-pointer select-none">
-      <span className="text-xs" style={{ color: '#8b949e' }}>{label}</span>
-      <div
-        onClick={() => onChange(!value)}
-        className="relative rounded-full cursor-pointer"
-        style={{
-          width: 36, height: 20,
-          background: value ? '#1f6feb' : '#30363d',
-          transition: 'background 0.2s',
-        }}
-      >
-        <span
-          className="absolute top-0.5 rounded-full bg-white"
-          style={{
-            width: 16, height: 16,
-            left: value ? 18 : 2,
-            transition: 'left 0.2s',
-          }}
-        />
-      </div>
-    </label>
-  )
-}
-
 export default function Topbar() {
   const {
-    activePair, setActivePair,
+    activePair,      setActivePair,
     mt5Connected,
-    llmEnabled, setLlmEnabled,
-    autoTrade,  setAutoTrade,
+    activeStrategy,  setActiveStrategy,
   } = useApp()
 
   const [priceData,   setPriceData]   = useState(null)
@@ -87,6 +60,24 @@ export default function Topbar() {
         {PARES.map(p => <option key={p} value={p}>{p}</option>)}
       </select>
 
+      {/* Selector de estrategia — visible solo cuando el par es XAUUSD */}
+      {activePair === 'XAUUSD' && (
+        <select
+          value={activeStrategy}
+          onChange={e => setActiveStrategy(e.target.value)}
+          className="text-xs rounded px-2.5 py-1.5 outline-none cursor-pointer font-medium"
+          style={{
+            background: activeStrategy === 'SMC_GOLD' ? '#1a2f1a' : '#21262d',
+            border: `1px solid ${activeStrategy === 'SMC_GOLD' ? '#2ea043' : '#30363d'}`,
+            color: activeStrategy === 'SMC_GOLD' ? '#3fb950' : '#8b949e',
+          }}
+          title="Estrategia de análisis para XAUUSD"
+        >
+          <option value="EMA_RSI">EMA + RSI</option>
+          <option value="SMC_GOLD">⚡ SMC Gold (IA)</option>
+        </select>
+      )}
+
       {/* Precio en vivo */}
       <div className="flex items-baseline gap-2">
         <span
@@ -111,10 +102,6 @@ export default function Topbar() {
       )}
 
       <div className="flex-1" />
-
-      {/* Toggles */}
-      <Toggle label="LLM Noticias" value={llmEnabled} onChange={setLlmEnabled} />
-      <Toggle label="Auto-trade"   value={autoTrade}   onChange={setAutoTrade}  />
 
       {/* Badge conexión MT5 */}
       <div

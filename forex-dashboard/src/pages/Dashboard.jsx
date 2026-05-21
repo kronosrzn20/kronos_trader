@@ -4,6 +4,7 @@ import { TrendingUp, TrendingDown, Minus, RefreshCw, CircleDot } from 'lucide-re
 import { useApp } from '../context/AppContext'
 import { API } from '../utils/constants'
 import SignalExplanation from '../components/SignalExplanation'
+import SmcSignalPanel   from '../components/SmcSignalPanel'
 
 // ── Sub-componentes ────────────────────────────────────────────────────────────
 
@@ -25,18 +26,39 @@ function SignalBadge({ signal }) {
   )
 }
 
-function IndRow({ label, value, color }) {
+function IndRow({ label, sublabel, value, color, tag, tagColor }) {
   return (
     <div
       className="flex justify-between items-center py-2"
       style={{ borderBottom: '1px solid #21262d' }}
     >
-      <span style={{ color: '#8b949e', fontSize: 12 }}>{label}</span>
-      <span style={{ color: color ?? '#c9d1d9', fontSize: 12, fontFamily: 'monospace' }}>
-        {value ?? '—'}
-      </span>
+      <div>
+        <span style={{ color: '#8b949e', fontSize: 12 }}>{label}</span>
+        {sublabel && (
+          <p style={{ color: '#30363d', fontSize: 10, marginTop: 1 }}>{sublabel}</p>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        {tag && (
+          <span style={{ fontSize: 10, color: tagColor ?? '#8b949e', fontWeight: 600 }}>
+            {tag}
+          </span>
+        )}
+        <span style={{ color: color ?? '#c9d1d9', fontSize: 12, fontFamily: 'monospace' }}>
+          {value ?? '—'}
+        </span>
+      </div>
     </div>
   )
+}
+
+function getRsiTag(rsi) {
+  if (!rsi) return {}
+  if (rsi > 70) return { tag: 'Sobrecomprado',   tagColor: '#f85149' }
+  if (rsi < 30) return { tag: 'Sobrevendido',     tagColor: '#58a6ff' }
+  if (rsi > 55) return { tag: 'Fuerza alcista',   tagColor: '#3fb950' }
+  if (rsi < 45) return { tag: 'Fuerza bajista',   tagColor: '#f0883e' }
+  return          { tag: 'Zona neutral',           tagColor: '#8b949e' }
 }
 
 function Skeleton({ h = 5 }) {
@@ -62,7 +84,8 @@ function getSignalReason(signal, ind) {
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const { activePair, mt5Connected } = useApp()
+  const { activePair, mt5Connected, activeStrategy } = useApp()
+  const smcMode = activeStrategy === 'SMC_GOLD' && activePair === 'XAUUSD'
 
   const containerRef  = useRef(null)
   const chartRef      = useRef(null)
@@ -153,9 +176,10 @@ export default function Dashboard() {
       const res  = await fetch(`${API}/candles/${activePair}`)
       if (!res.ok) return
       const data = await res.json()
+      if (!data.candles?.length) return
       candleRef.current?.setData(data.candles)
-      ema20Ref.current?.setData(data.ema20)
-      ema50Ref.current?.setData(data.ema50)
+      ema20Ref.current?.setData(data.ema20  ?? [])
+      ema50Ref.current?.setData(data.ema50  ?? [])
       chartRef.current?.timeScale().fitContent()
     } catch (e) {
       console.error('[Dashboard] Error velas:', e)
@@ -165,10 +189,11 @@ export default function Dashboard() {
   }, [activePair, mt5Connected])
 
   useEffect(() => {
-    fetchCandles()
-    const id = setInterval(fetchCandles, 60_000)
+    // Fetch inmediato al conectar o cambiar de par — nunca queda vacío
+    if (mt5Connected) fetchCandles()
+    const id = setInterval(() => { if (mt5Connected) fetchCandles() }, 60_000)
     return () => clearInterval(id)
-  }, [fetchCandles])
+  }, [fetchCandles, mt5Connected])
 
   // ── Señal e indicadores (polling 5 s) ─────────────────────────────────────
   const fetchSignal = useCallback(async () => {
@@ -259,68 +284,113 @@ export default function Dashboard() {
       {/* ── Panel derecho ──────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-3" style={{ width: 270 }}>
 
-        {/* Señal */}
-        <div
-          className="rounded-lg p-4"
-          style={{ background: '#161b22', border: '1px solid #30363d' }}
-        >
-          <p className="text-xs mb-2" style={{ color: '#8b949e' }}>Señal actual · {activePair}</p>
-          {signalLoading && !signalInfo
-            ? <Skeleton h={12} />
-            : <SignalBadge signal={signalInfo?.signal ?? 'NEUTRAL'} />
-          }
-          {signalInfo?.timestamp && (
-            <p className="text-xs mt-2" style={{ color: '#30363d' }}>
-              {new Date(signalInfo.timestamp).toLocaleTimeString('es')}
-            </p>
-          )}
-        </div>
+        {smcMode ? (
+          /* ── Modo SMC Gold ──────────────────────────────────────────────── */
+          <div
+            className="rounded-lg p-4 overflow-auto flex-1"
+            style={{ background: '#161b22', border: '1px solid #30363d' }}
+          >
+            <SmcSignalPanel mt5Connected={mt5Connected} />
+          </div>
+        ) : (
+          /* ── Modo EMA + RSI (default) ───────────────────────────────────── */
+          <>
+            {/* Señal */}
+            <div
+              className="rounded-lg p-4"
+              style={{ background: '#161b22', border: '1px solid #30363d' }}
+            >
+              <p className="text-xs mb-2" style={{ color: '#8b949e' }}>Señal actual · {activePair}</p>
+              {signalLoading && !signalInfo
+                ? <Skeleton h={12} />
+                : <SignalBadge signal={signalInfo?.signal ?? 'NEUTRAL'} />
+              }
+              {signalInfo?.timestamp && (
+                <p className="text-xs mt-2" style={{ color: '#30363d' }}>
+                  {new Date(signalInfo.timestamp).toLocaleTimeString('es')}
+                </p>
+              )}
+            </div>
 
-        {/* Indicadores */}
-        <div
-          className="rounded-lg p-4"
-          style={{ background: '#161b22', border: '1px solid #30363d' }}
-        >
-          <p className="text-xs mb-1" style={{ color: '#8b949e' }}>Indicadores</p>
-          {signalLoading && !ind
-            ? [1,2,3,4,5,6].map(i => <Skeleton key={i} />)
-            : <>
-                <IndRow label="EMA 20"   value={ind?.ema20}  color="#58a6ff" />
-                <IndRow label="EMA 50"   value={ind?.ema50}  color="#a371f7" />
-                <IndRow label="EMA 200"  value={ind?.ema200} />
-                <IndRow
-                  label="RSI 14"
-                  value={ind?.rsi}
-                  color={ind?.rsi > 70 ? '#f85149' : ind?.rsi < 30 ? '#58a6ff' : '#c9d1d9'}
-                />
-                <IndRow label="ATR 14"  value={ind?.atr}  />
-                <IndRow label="Precio"  value={signalInfo?.precio?.toFixed(5)} />
-              </>
-          }
-        </div>
-
-        {/* Explicación visual de la señal */}
-        <div
-          className="rounded-lg p-4"
-          style={{ background: '#161b22', border: '1px solid #30363d' }}
-        >
-          <p className="text-xs mb-3 font-medium" style={{ color: '#8b949e' }}>
-            Análisis de la señal
-          </p>
-          {signalInfo
-            ? <SignalExplanation
-                signal={signalInfo.signal}
-                indicators={signalInfo.indicators}
-                precio={signalInfo.precio}
-              />
-            : <div style={{ color: '#30363d', fontSize: 12, textAlign: 'center', padding: '16px 0' }}>
-                Esperando datos…
+            {/* Indicadores */}
+            <div
+              className="rounded-lg p-4"
+              style={{ background: '#161b22', border: '1px solid #30363d' }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-medium" style={{ color: '#8b949e' }}>Indicadores técnicos</p>
+                <span
+                  className="text-xs px-1.5 py-0.5 rounded"
+                  style={{ background: '#21262d', color: '#30363d', fontSize: 10 }}
+                  title="Estos valores se calculan automáticamente con los precios de las últimas horas"
+                >
+                  M15 · automático
+                </span>
               </div>
-          }
-        </div>
+              {signalLoading && !ind
+                ? [1,2,3,4,5,6].map(i => <Skeleton key={i} />)
+                : <>
+                    <IndRow
+                      label="Tendencia corto plazo"
+                      sublabel="EMA 20 — últimas horas"
+                      value={ind?.ema20}
+                      color="#58a6ff"
+                    />
+                    <IndRow
+                      label="Tendencia medio plazo"
+                      sublabel="EMA 50 — últimos días"
+                      value={ind?.ema50}
+                      color="#a371f7"
+                    />
+                    <IndRow
+                      label="Tendencia largo plazo"
+                      sublabel="EMA 200 — últimas semanas"
+                      value={ind?.ema200}
+                    />
+                    <IndRow
+                      label="Impulso del precio"
+                      sublabel="RSI 14 — fuerza del movimiento"
+                      value={ind?.rsi}
+                      color={ind?.rsi > 70 ? '#f85149' : ind?.rsi < 30 ? '#58a6ff' : '#c9d1d9'}
+                      {...getRsiTag(ind?.rsi)}
+                    />
+                    <IndRow
+                      label="Volatilidad"
+                      sublabel="ATR 14 — rango promedio de cada vela"
+                      value={ind?.atr}
+                    />
+                    <IndRow
+                      label="Precio actual"
+                      value={signalInfo?.precio?.toFixed(5)}
+                    />
+                  </>
+              }
+            </div>
 
-        {/* Posiciones abiertas */}
-        <div
+            {/* Explicación visual de la señal */}
+            <div
+              className="rounded-lg p-4"
+              style={{ background: '#161b22', border: '1px solid #30363d' }}
+            >
+              <p className="text-xs mb-3 font-medium" style={{ color: '#8b949e' }}>
+                Análisis de la señal
+              </p>
+              {signalInfo
+                ? <SignalExplanation
+                    signal={signalInfo.signal}
+                    indicators={signalInfo.indicators}
+                    precio={signalInfo.precio}
+                  />
+                : <div style={{ color: '#30363d', fontSize: 12, textAlign: 'center', padding: '16px 0' }}>
+                    Esperando datos…
+                  </div>
+              }
+            </div>
+          </>
+        )}
+
+        {/* Posiciones abiertas — oculto en modo SMC (el panel SMC ocupa todo el espacio) */}
+        {!smcMode && <div
           className="rounded-lg p-4 flex-1 overflow-auto"
           style={{ background: '#161b22', border: '1px solid #30363d' }}
         >
@@ -426,7 +496,7 @@ export default function Dashboard() {
               )}
             </div>
           )}
-        </div>
+        </div>}
 
       </div>
     </div>

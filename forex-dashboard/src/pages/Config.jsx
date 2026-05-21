@@ -297,7 +297,6 @@ function MT5Section() {
 // ── Config page ────────────────────────────────────────────────────────────────
 
 export default function Config() {
-  const { llmEnabled, setLlmEnabled, autoTrade, setAutoTrade } = useApp()
   const [config,  setConfig]  = useState(loadConfig)
   const [saved,   setSaved]   = useState(false)
   const [saving,  setSaving]  = useState(false)
@@ -306,8 +305,7 @@ export default function Config() {
 
   const handleSave = async () => {
     setSaving(true)
-    const full = { ...config, llmEnabled, autoTrade }
-    localStorage.setItem('agentConfig', JSON.stringify(full))
+    localStorage.setItem('agentConfig', JSON.stringify(config))
     localStorage.setItem('lotSize', String(config.lotSize))
 
     try {
@@ -320,8 +318,6 @@ export default function Config() {
           riesgo:       config.riesgo,
           mult_sl:      config.multSL,
           mult_tp:      config.multTP,
-          auto_trade:   autoTrade,
-          llm_enabled:  llmEnabled,
           solo_londres: config.soloLondres,
         }),
       })
@@ -397,18 +393,6 @@ export default function Config() {
         {/* ── Opciones ───────────────────────────────────────────────────── */}
         <section>
           <SectionTitle>Opciones</SectionTitle>
-          <ToggleField
-            label="LLM Noticias"
-            desc="Analizar noticias con inteligencia artificial"
-            value={llmEnabled}
-            onChange={() => setLlmEnabled(v => !v)}
-          />
-          <ToggleField
-            label="Auto-trade"
-            desc="Ejecutar órdenes automáticamente cuando hay señal"
-            value={autoTrade}
-            onChange={() => setAutoTrade(v => !v)}
-          />
           <ToggleField
             label="Solo sesión Londres / NY"
             desc="Operar únicamente en horario de alta liquidez (08:00–17:00 UTC)"

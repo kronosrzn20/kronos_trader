@@ -7,11 +7,9 @@ export function AppProvider({ children }) {
   const [activePair, setActivePair]   = useState('EURUSD')
   const [mt5Connected, setMt5Connected] = useState(false)
   const [liveData, setLiveData]       = useState(null)
-  const [llmEnabled, setLlmEnabled]   = useState(
-    () => localStorage.getItem('llmEnabled') === 'true'
-  )
-  const [autoTrade, setAutoTrade] = useState(
-    () => localStorage.getItem('autoTrade') === 'true'
+  // Estrategia activa: 'EMA_RSI' (default) | 'SMC_GOLD' (solo XAUUSD)
+  const [activeStrategy, setActiveStrategy] = useState(
+    () => localStorage.getItem('activeStrategy') || 'EMA_RSI'
   )
 
   const wsRef          = useRef(null)
@@ -56,22 +54,23 @@ export function AppProvider({ children }) {
     }
   }, [])
 
-  // ── Persistir toggles ──────────────────────────────────────────────────────
+  // Resetear estrategia a EMA_RSI si el par cambia y ya no es XAUUSD
   useEffect(() => {
-    localStorage.setItem('llmEnabled', llmEnabled)
-  }, [llmEnabled])
+    if (activePair !== 'XAUUSD' && activeStrategy === 'SMC_GOLD') {
+      setActiveStrategy('EMA_RSI')
+    }
+  }, [activePair])
 
   useEffect(() => {
-    localStorage.setItem('autoTrade', autoTrade)
-  }, [autoTrade])
+    localStorage.setItem('activeStrategy', activeStrategy)
+  }, [activeStrategy])
 
   return (
     <AppContext.Provider value={{
       activePair, setActivePair,
       mt5Connected,
       liveData,
-      llmEnabled, setLlmEnabled,
-      autoTrade,  setAutoTrade,
+      activeStrategy,  setActiveStrategy,
     }}>
       {children}
     </AppContext.Provider>

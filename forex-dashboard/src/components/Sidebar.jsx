@@ -1,13 +1,12 @@
 import { NavLink } from 'react-router-dom'
 import {
-  BarChart2, Zap, Newspaper, History, Settings, TrendingUp,
+  BarChart2, Zap, History, Settings, TrendingUp,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 
 const LINKS = [
   { to: '/',        icon: BarChart2,  label: 'Dashboard'     },
   { to: '/signals', icon: Zap,        label: 'Señales'       },
-  { to: '/news',    icon: Newspaper,  label: 'Noticias'      },
   { to: '/history', icon: History,    label: 'Historial'     },
   { to: '/config',  icon: Settings,   label: 'Configuración' },
 ]

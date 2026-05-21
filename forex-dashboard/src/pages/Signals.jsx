@@ -1,6 +1,101 @@
 import { useState, useEffect, useCallback } from 'react'
-import { TrendingUp, TrendingDown, Minus, Zap, RefreshCw, AlertCircle } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus, Zap, RefreshCw, AlertCircle, HelpCircle, ChevronDown, ChevronUp } from 'lucide-react'
 import { API, PARES } from '../utils/constants'
+
+// ── Leyenda explicativa (desplegable) ─────────────────────────────────────────
+function Leyenda() {
+  const [open, setOpen] = useState(false)
+  const items = [
+    {
+      icon: '📈',
+      title: 'Señal COMPRA',
+      desc: 'El sistema detecta que las tres tendencias (corto, medio y largo plazo) apuntan hacia arriba y el impulso del precio está en una zona saludable para comprar.',
+    },
+    {
+      icon: '📉',
+      title: 'Señal VENTA',
+      desc: 'Las tres tendencias apuntan hacia abajo y el impulso indica presión vendedora sin señales de recuperación inmediata.',
+    },
+    {
+      icon: '↔',
+      title: 'Sin señal (NEUTRAL)',
+      desc: 'Las condiciones no son lo suficientemente claras. El sistema recomienda esperar antes de operar.',
+    },
+    {
+      icon: '〰',
+      title: 'EMA 20 / 50 / 200',
+      desc: 'Son promedios del precio en el tiempo. EMA 20 = tendencia de las últimas horas. EMA 50 = últimos días. EMA 200 = últimas semanas. Cuando todas apuntan en la misma dirección, la señal es más confiable.',
+    },
+    {
+      icon: '⚡',
+      title: 'RSI (Fuerza del movimiento)',
+      desc: 'Mide si el precio se está moviendo con demasiada fuerza. Por encima de 70 = el precio subió demasiado rápido (sobrecomprado). Por debajo de 30 = bajó demasiado rápido (sobrevendido). Entre 30 y 70 = zona normal.',
+    },
+    {
+      icon: '📏',
+      title: 'ATR (Volatilidad)',
+      desc: 'Indica cuánto se mueve el precio en promedio por cada vela de 15 minutos. Un ATR alto significa movimientos más bruscos. Se usa para calcular el Stop Loss y el Take Profit automáticamente.',
+    },
+    {
+      icon: '🛑',
+      title: 'Stop Loss (SL)',
+      desc: 'El precio donde la operación se cierra automáticamente si el mercado va en contra. Limita la pérdida máxima de la operación.',
+    },
+    {
+      icon: '🎯',
+      title: 'Take Profit (TP)',
+      desc: 'El precio objetivo donde la operación se cierra automáticamente para capturar la ganancia.',
+    },
+  ]
+  return (
+    <div
+      className="rounded-lg overflow-hidden"
+      style={{ background: '#161b22', border: '1px solid #30363d' }}
+    >
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-3"
+        style={{ color: '#8b949e' }}
+      >
+        <div className="flex items-center gap-2">
+          <HelpCircle size={14} style={{ color: '#58a6ff' }} />
+          <span className="text-xs font-medium" style={{ color: '#c9d1d9' }}>
+            ¿Qué significa cada cosa?
+          </span>
+          <span className="text-xs" style={{ color: '#8b949e' }}>
+            — Guía para entender las señales
+          </span>
+        </div>
+        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+      </button>
+
+      {open && (
+        <div
+          className="grid grid-cols-2 gap-3 px-4 pb-4"
+          style={{ borderTop: '1px solid #30363d' }}
+        >
+          {items.map((item, i) => (
+            <div
+              key={i}
+              className="rounded-lg p-3 flex flex-col gap-1"
+              style={{ background: '#21262d', marginTop: i < 2 ? 12 : 0 }}
+            >
+              <div className="flex items-center gap-1.5">
+                <span style={{ fontSize: 14 }}>{item.icon}</span>
+                <span className="text-xs font-semibold" style={{ color: '#c9d1d9' }}>
+                  {item.title}
+                </span>
+              </div>
+              <p className="text-xs" style={{ color: '#8b949e', lineHeight: 1.5 }}>
+                {item.desc}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const SIG_STYLE = {
   COMPRA:  { color: '#3fb950', bg: '#0d2119', border: '#2ea043' },
@@ -179,7 +274,7 @@ export default function Signals() {
             Señales activas
           </h1>
           <p className="text-xs" style={{ color: '#8b949e' }}>
-            Actualización automática cada 15 segundos
+            Estrategia EMA + RSI · actualización automática cada 15 segundos
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -202,6 +297,9 @@ export default function Signals() {
           </button>
         </div>
       </div>
+
+      {/* Leyenda explicativa */}
+      <Leyenda />
 
       {/* Cards */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
