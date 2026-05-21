@@ -1,1 +1,21 @@
 node_modules/
+
+# Credenciales y secrets — NUNCA subir al repositorio
+.env
+*.env
+.env.*
+
+# Caché Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# Caché Node
+dist/
+.vite/
+
+# Archivos locales
+mt5_credentials.json
+*.log
