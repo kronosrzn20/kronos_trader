@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { createChart, CrosshairMode } from 'lightweight-charts'
+import { createChart, CrosshairMode, LineStyle } from 'lightweight-charts'
 import { TrendingUp, TrendingDown, Minus, RefreshCw, CircleDot } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { API } from '../utils/constants'
@@ -93,10 +93,27 @@ export default function Dashboard() {
   const ema20Ref      = useRef(null)
   const ema50Ref      = useRef(null)
 
+  const smcLinesRef = useRef([])  // price lines SMC activas en el gráfico
+
   const [chartLoading,  setChartLoading]  = useState(true)
   const [signalInfo,    setSignalInfo]    = useState(null)
   const [signalLoading, setSignalLoading] = useState(true)
   const [positions,     setPositions]     = useState([])
+  const [smcData,       setSmcData]       = useState(null)
+
+  // ── Capas del gráfico (visibles u ocultas) — persisten en localStorage ─────
+  const [layers, setLayers] = useState(() => {
+    try {
+      const s = localStorage.getItem('chartLayers')
+      return s ? JSON.parse(s) : { ema20: true, ema50: true, estructura: true, ob: true, fvg: true, sltp: true }
+    } catch { return { ema20: true, ema50: true, estructura: true, ob: true, fvg: true, sltp: true } }
+  })
+
+  const toggleLayer = (key) => setLayers(prev => {
+    const next = { ...prev, [key]: !prev[key] }
+    localStorage.setItem('chartLayers', JSON.stringify(next))
+    return next
+  })
 
   // ── Crear gráfico al montar (una sola vez) ─────────────────────────────────
   useEffect(() => {
@@ -168,6 +185,76 @@ export default function Dashboard() {
     }
   }, [])
 
+  // ── Visibilidad de EMAs según toggle ──────────────────────────────────────
+  useEffect(() => { ema20Ref.current?.applyOptions({ visible: layers.ema20 }) }, [layers.ema20])
+  useEffect(() => { ema50Ref.current?.applyOptions({ visible: layers.ema50 }) }, [layers.ema50])
+
+  // ── Dibujar niveles SMC sobre el gráfico ──────────────────────────────────
+  const clearSmcLines = useCallback(() => {
+    smcLinesRef.current.forEach(pl => {
+      try { candleRef.current?.removePriceLine(pl) } catch {}
+    })
+    smcLinesRef.current = []
+  }, [])
+
+  const drawSmcLevels = useCallback((smc, lyr) => {
+    if (!candleRef.current || !smc) return
+    clearSmcLines()
+    const lines = []
+
+    const addLine = (price, color, title, style = LineStyle.Dashed, width = 1) => {
+      if (!price || isNaN(price)) return
+      try {
+        const pl = candleRef.current.createPriceLine({
+          price, color, lineWidth: width, lineStyle: style,
+          axisLabelVisible: true, title,
+        })
+        lines.push(pl)
+      } catch {}
+    }
+
+    // CHoCH / BOS — solo si fue detectado (cumple confluencia)
+    if (lyr.estructura && smc.estructura?.nivel && smc.estructura.tipo) {
+      const c = smc.estructura.direccion === 'ALCISTA' ? '#3fb950' : '#f85149'
+      addLine(smc.estructura.nivel, c, smc.estructura.tipo, LineStyle.LargeDashed, 2)
+    }
+
+    // Order Block más relevante (solo el más cercano al precio actual)
+    if (lyr.ob && smc.order_blocks?.length) {
+      const precio = smc.precio ?? 0
+      const ob = smc.order_blocks
+        .filter(o => !o.mitigado)                              // descartar ya mitigados
+        .sort((a, b) => Math.abs((a.mitad ?? 0) - precio) - Math.abs((b.mitad ?? 0) - precio))[0]
+      if (ob) {
+        const c = ob.tipo === 'BULLISH' ? '#3fb950' : '#f85149'
+        addLine(ob.alto ?? ob.high, c, `OB ${ob.tipo === 'BULLISH' ? '▲' : '▼'}`, LineStyle.Dashed)
+        addLine(ob.bajo ?? ob.low,  c, '', LineStyle.Dashed)
+      }
+    }
+
+    // FVG más relevante (solo el más cercano al precio actual)
+    if (lyr.fvg && smc.fvgs?.length) {
+      const precio = smc.precio ?? 0
+      const fvg = smc.fvgs
+        .sort((a, b) => Math.abs((a.mitad ?? 0) - precio) - Math.abs((b.mitad ?? 0) - precio))[0]
+      if (fvg) {
+        const c = fvg.tipo === 'BULLISH' ? '#58a6ff' : '#a371f7'
+        addLine(fvg.superior, c, `FVG ${fvg.tipo === 'BULLISH' ? '▲' : '▼'}`, LineStyle.Dotted)
+        addLine(fvg.inferior, c, '', LineStyle.Dotted)
+      }
+    }
+
+    // SL y TP — solo cuando hay señal real
+    if (lyr.sltp && smc.senal !== 'NEUTRAL') {
+      if (smc.sl)  addLine(smc.sl,  '#f85149', '🛑 SL',  LineStyle.Solid, 1)
+      if (smc.tp1) addLine(smc.tp1, '#3fb950', '🎯 TP1', LineStyle.Solid, 1)
+      if (smc.tp2) addLine(smc.tp2, '#3fb950', 'TP2',    LineStyle.Dashed)
+      if (smc.tp3) addLine(smc.tp3, '#3fb950', 'TP3',    LineStyle.Dotted)
+    }
+
+    smcLinesRef.current = lines
+  }, [clearSmcLines])
+
   // ── Cargar velas cuando cambia el par ─────────────────────────────────────
   const fetchCandles = useCallback(async () => {
     if (!mt5Connected || !candleRef.current) return
@@ -219,6 +306,30 @@ export default function Dashboard() {
     return () => clearInterval(id)
   }, [fetchSignal])
 
+  // ── Datos SMC para dibujar en el gráfico (solo en modo SMC Gold) ──────────
+  const fetchSmcForChart = useCallback(async () => {
+    if (!smcMode || !mt5Connected) return
+    try {
+      const res  = await fetch(`${API}/signal/xauusd/smc`)
+      if (!res.ok) return
+      const data = await res.json()
+      setSmcData(data)
+      drawSmcLevels(data, layers)
+    } catch {}
+  }, [smcMode, mt5Connected, drawSmcLevels, layers])
+
+  useEffect(() => {
+    if (!smcMode) { clearSmcLines(); setSmcData(null); return }
+    fetchSmcForChart()
+    const id = setInterval(fetchSmcForChart, 310_000)
+    return () => clearInterval(id)
+  }, [smcMode, fetchSmcForChart, clearSmcLines])
+
+  // Redibujar cuando cambian las capas visibles o cuando cargan nuevas velas
+  useEffect(() => {
+    if (smcData && !chartLoading) drawSmcLevels(smcData, layers)
+  }, [chartLoading, smcData, layers, drawSmcLevels])
+
   // ── Posiciones abiertas (polling 5 s) ──────────────────────────────────────
   useEffect(() => {
     if (!mt5Connected) return
@@ -247,25 +358,67 @@ export default function Dashboard() {
       >
         {/* Cabecera gráfico */}
         <div
-          className="flex items-center justify-between px-4 py-2 flex-shrink-0"
+          className="flex items-center justify-between px-3 py-1.5 flex-shrink-0 flex-wrap gap-2"
           style={{ borderBottom: '1px solid #30363d' }}
         >
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium" style={{ color: '#c9d1d9' }}>
-              {activePair}
-            </span>
-            <span className="text-xs px-2 py-0.5 rounded" style={{ background: '#21262d', color: '#8b949e' }}>
-              M15
-            </span>
-            {/* Leyenda EMAs */}
-            <span className="flex items-center gap-1 text-xs" style={{ color: '#58a6ff' }}>
-              <span className="w-3 h-0.5 inline-block rounded" style={{ background: '#58a6ff' }} />
-              EMA20
-            </span>
-            <span className="flex items-center gap-1 text-xs" style={{ color: '#a371f7' }}>
-              <span className="w-3 h-0.5 inline-block rounded" style={{ background: '#a371f7' }} />
-              EMA50
-            </span>
+          {/* Par + temporalidad */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium" style={{ color: '#c9d1d9' }}>{activePair}</span>
+            <span className="text-xs px-2 py-0.5 rounded" style={{ background: '#21262d', color: '#8b949e' }}>M15</span>
+          </div>
+
+          {/* Toggles de capas */}
+          <div className="flex items-center gap-1 flex-wrap">
+            {/* EMAs — siempre disponibles */}
+            {[
+              { key: 'ema20', label: 'EMA20', color: '#58a6ff' },
+              { key: 'ema50', label: 'EMA50', color: '#a371f7' },
+            ].map(({ key, label, color }) => (
+              <button
+                key={key}
+                onClick={() => toggleLayer(key)}
+                title={layers[key] ? `Ocultar ${label}` : `Mostrar ${label}`}
+                className="flex items-center gap-1 text-xs px-2 py-0.5 rounded"
+                style={{
+                  background: layers[key] ? color + '22' : '#21262d',
+                  border:     `1px solid ${layers[key] ? color + '88' : '#30363d'}`,
+                  color:      layers[key] ? color : '#30363d',
+                  opacity:    layers[key] ? 1 : 0.5,
+                }}
+              >
+                <span className="w-3 inline-block" style={{ borderTop: `2px solid ${color}` }} />
+                {label}
+              </button>
+            ))}
+
+            {/* Separador — capas SMC solo en modo Gold */}
+            {smcMode && (
+              <>
+                <span style={{ color: '#30363d', fontSize: 10 }}>|</span>
+                {[
+                  { key: 'estructura', label: 'CHoCH/BOS', color: '#e3b341', dash: 'dashed' },
+                  { key: 'ob',         label: 'OB',         color: '#3fb950', dash: 'dashed' },
+                  { key: 'fvg',        label: 'FVG',        color: '#58a6ff', dash: 'dotted' },
+                  { key: 'sltp',       label: 'SL/TP',      color: '#f85149', dash: 'solid'  },
+                ].map(({ key, label, color, dash }) => (
+                  <button
+                    key={key}
+                    onClick={() => toggleLayer(key)}
+                    title={layers[key] ? `Ocultar ${label}` : `Mostrar ${label}`}
+                    className="flex items-center gap-1 text-xs px-2 py-0.5 rounded"
+                    style={{
+                      background: layers[key] ? color + '22' : '#21262d',
+                      border:     `1px solid ${layers[key] ? color + '88' : '#30363d'}`,
+                      color:      layers[key] ? color : '#30363d',
+                      opacity:    layers[key] ? 1 : 0.5,
+                    }}
+                  >
+                    <span className="w-3 inline-block" style={{ borderTop: `2px ${dash} ${color}` }} />
+                    {label}
+                  </button>
+                ))}
+              </>
+            )}
           </div>
           <button
             onClick={fetchCandles}
