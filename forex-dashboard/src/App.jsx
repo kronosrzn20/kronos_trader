@@ -7,6 +7,7 @@ import Dashboard  from './pages/Dashboard'
 import Signals    from './pages/Signals'
 import History    from './pages/History'
 import Config     from './pages/Config'
+import Guide      from './pages/Guide'
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
                 <Route path="/signals"  element={<Signals />}   />
                 <Route path="/history"  element={<History />}   />
                 <Route path="/config"   element={<Config />}    />
+                <Route path="/guide"    element={<Guide />}     />
               </Routes>
             </main>
 

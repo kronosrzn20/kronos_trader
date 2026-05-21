@@ -41,6 +41,19 @@ TEMPORALIDAD     = os.getenv("TEMPORALIDAD", "M15")
 N_VELAS          = int(os.getenv("VELAS_HISTORICAS", 200))
 SIMBOLOS_DEFAULT = ["EURUSD", "GBPUSD", "USDJPY"]
 
+# Aliases de símbolos: el frontend usa nombres estándar (XAUUSD, XAGUSD),
+# pero el broker puede tener nombres distintos (GOLD, SILVER, XAUUSDm, etc.)
+_GOLD_MT5   = os.getenv("MT5_GOLD_SYMBOL",   "GOLD")
+_SILVER_MT5 = os.getenv("MT5_SILVER_SYMBOL", "SILVER")
+_SYMBOL_ALIAS: dict[str, str] = {
+    "XAUUSD": _GOLD_MT5,
+    "XAGUSD": _SILVER_MT5,
+}
+
+def _resolve_symbol(symbol: str) -> str:
+    """Traduce el nombre de display (XAUUSD) al nombre real del broker (GOLD)."""
+    return _SYMBOL_ALIAS.get(symbol.upper(), symbol.upper())
+
 
 # ── Estado de conexión ────────────────────────────────────────────────────────
 
@@ -149,7 +162,7 @@ async def get_signal(symbol: str):
     y retorna la señal actual (COMPRA / VENTA / NEUTRAL).
     """
     _verificar_conexion()
-    symbol = symbol.upper()
+    symbol = _resolve_symbol(symbol)
     try:
         info = await asyncio.to_thread(_analizar_simbolo, symbol)
     except Exception as e:
@@ -333,6 +346,108 @@ async def post_trade(body: TradeRequest):
     }
 
 
+# ── Endpoint SMC para XAUUSD ──────────────────────────────────────────────────
+
+# Caché simple para no consultar yfinance en cada llamada (TTL 60 s)
+_smc_cache: dict = {"data": None, "ts": 0}
+_SMC_TTL = 300  # 5 minutos — la vela M15 dura 15 min, no tiene sentido refrescar más rápido
+
+def _en_horario_operativo() -> bool:
+    """
+    Devuelve True si estamos dentro del horario de alta liquidez para XAUUSD:
+      - Sesión Londres : 08:00 – 17:00 UTC
+      - Sesión Nueva York: 13:00 – 22:00 UTC
+    Unión: 08:00 – 22:00 UTC de lunes a viernes.
+    """
+    from datetime import datetime, timezone
+    ahora = datetime.now(timezone.utc)
+    # No operar en fin de semana (sábado=5, domingo=6)
+    if ahora.weekday() >= 5:
+        return False
+    hora = ahora.hour + ahora.minute / 60
+    return 8.0 <= hora < 22.0
+
+
+@app.get("/signal/xauusd/smc", summary="Análisis SMC completo para XAUUSD con explicación GPT")
+async def get_xauusd_smc():
+    """
+    Análisis Smart Money Concepts para XAUUSD.
+    Incluye: sesgo DXY, CHoCH/BOS, Order Blocks, FVG, Equal H/L, sesión,
+    divergencia SMT con XAG/USD y una explicación generada por GPT-4o-mini.
+    Resultado cacheado 5 min para evitar exceso de llamadas a yfinance y OpenAI.
+    Fuera del horario Londres/NY (08:00–22:00 UTC) no se realiza ningún cálculo
+    ni llamada a GPT — consumo de tokens = 0.
+    """
+    import time
+    _verificar_conexion()
+
+    # ── Fuera de horario: respuesta inmediata sin ningún cálculo ─────────────
+    if not _en_horario_operativo():
+        from datetime import datetime, timezone
+        return {
+            "senal":            "NEUTRAL",
+            "fuera_de_horario": True,
+            "explicacion_gpt": (
+                "FUERA DE HORARIO:\n"
+                "El análisis SMC Gold solo opera en sesión Londres (08:00–17:00 UTC) "
+                "y Nueva York (13:00–22:00 UTC), que son los horarios de mayor liquidez "
+                "para el Oro.\n\n"
+                "CONCLUSIÓN:\n"
+                "Actualmente el mercado está en sesión Asia o cerrado. "
+                "No se realizan cálculos ni se consume ningún token fuera de este horario. "
+                "Vuelve a partir de las 08:00 UTC."
+            ),
+            "precio":           None,
+            "timestamp":        datetime.now(timezone.utc).isoformat(),
+        }
+
+    now = time.time()
+    if _smc_cache["data"] and (now - _smc_cache["ts"]) < _SMC_TTL:
+        return _smc_cache["data"]
+
+    try:
+        import gold_strategy  as gs
+        import openai_analyst as oa
+
+        datos = await asyncio.to_thread(gs.calcular_senal_smc)
+
+        # Solo llamar a GPT cuando hay una señal real (COMPRA o VENTA) con
+        # suficientes confluencias — evita consumir tokens en señales NEUTRAL.
+        confluencias_ok = datos.get("confluencias_ok", 0)
+        senal           = datos.get("senal", "NEUTRAL")
+
+        if senal != "NEUTRAL" and confluencias_ok >= 3:
+            explicacion = await asyncio.to_thread(oa.analizar_con_gpt, datos)
+        else:
+            if senal == "NEUTRAL":
+                explicacion = (
+                    "ANÁLISIS TÉCNICO (M15):\n"
+                    "El mercado no muestra una dirección clara en este momento. "
+                    f"Solo se detectaron {confluencias_ok} confluencias de las requeridas para generar una señal.\n\n"
+                    "ANÁLISIS FUNDAMENTAL:\n"
+                    "Sin eventos de alto impacto que generen un sesgo definido en este momento.\n\n"
+                    "CONCLUSIÓN:\n"
+                    "Situación neutral — se recomienda esperar a que el mercado defina dirección "
+                    "antes de tomar cualquier posición."
+                )
+            else:
+                explicacion = (
+                    f"ANÁLISIS TÉCNICO (M15):\n"
+                    f"Señal {senal} detectada pero con solo {confluencias_ok} confluencias. "
+                    "Se necesitan al menos 3 para generar análisis completo.\n\n"
+                    "CONCLUSIÓN:\n"
+                    "Señal débil — esperar mayor confirmación antes de operar."
+                )
+
+        datos["explicacion_gpt"] = explicacion
+        _smc_cache["data"] = datos
+        _smc_cache["ts"]   = now
+        return datos
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en análisis SMC: {str(e)}")
+
+
 @app.get("/candles/{symbol}", summary="Datos OHLCV + EMA20/EMA50 para el gráfico")
 async def get_candles(symbol: str, tf: str = "M15", count: int = 200):
     """
@@ -340,7 +455,7 @@ async def get_candles(symbol: str, tf: str = "M15", count: int = 200):
     que espera lightweight-charts (time en Unix segundos UTC).
     """
     _verificar_conexion()
-    symbol = symbol.upper()
+    symbol = _resolve_symbol(symbol)
 
     def _fetch():
         df     = mt5c.obtener_velas(symbol, tf, count)
@@ -514,7 +629,7 @@ async def get_config():
 async def get_price(symbol: str):
     """Retorna el precio actual de bid, ask y spread en pips para el símbolo."""
     _verificar_conexion()
-    symbol = symbol.upper()
+    symbol = _resolve_symbol(symbol)
     try:
         precio = await asyncio.to_thread(mt5c.obtener_precio_actual, symbol)
     except Exception as e:

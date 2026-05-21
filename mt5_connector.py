@@ -115,6 +115,9 @@ def obtener_velas(simbolo: str, temporalidad: str, cantidad: int) -> pd.DataFram
         raise ValueError(f"Temporalidad '{temporalidad}' no reconocida. "
                          f"Opciones: {list(TEMPORALIDADES.keys())}")
 
+    # Asegurar que el símbolo esté visible en el Market Watch (necesario para XAUUSD, índices, etc.)
+    mt5.symbol_select(simbolo, True)
+
     print(f"📊 Descargando {cantidad} velas de {simbolo} [{temporalidad}]...")
     rates = mt5.copy_rates_from_pos(simbolo, tf, 0, cantidad)
 
@@ -145,6 +148,9 @@ def obtener_precio_actual(simbolo: str) -> dict:
     Returns:
         Diccionario con claves 'bid', 'ask' y 'spread'.
     """
+    # Activar símbolo en Market Watch si no lo está (XAUUSD, índices, etc.)
+    mt5.symbol_select(simbolo, True)
+
     tick = mt5.symbol_info_tick(simbolo)
     if tick is None:
         raise RuntimeError(f"No se pudo obtener el tick de {simbolo}: {mt5.last_error()}")

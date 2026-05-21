@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import {
-  BarChart2, Zap, History, Settings, TrendingUp,
+  BarChart2, Zap, History, Settings, TrendingUp, BookOpen,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 
@@ -9,6 +9,7 @@ const LINKS = [
   { to: '/signals', icon: Zap,        label: 'Señales'       },
   { to: '/history', icon: History,    label: 'Historial'     },
   { to: '/config',  icon: Settings,   label: 'Configuración' },
+  { to: '/guide',   icon: BookOpen,   label: 'Manual'        },
 ]
 
 export default function Sidebar() {
